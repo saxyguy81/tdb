@@ -1,0 +1,52 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+
+proc reset-state {} {
+    tdb::stop
+}
+
+cleanupTests
+
+set sampleFile [file normalize [info script]]
+
+reset-state
+
+test break-1.1 {add file breakpoint with options} -body {
+    set id [tdb::break add -file $sampleFile -line 12 -condition {$x > 1} -hitCount ">=3" -oneshot 1 -log {hit it}]
+    set entries [tdb::break ls]
+    list $id [llength $entries] [dict get [lindex $entries 0] file] [dict get [lindex $entries 0] oneshot]
+} -cleanup {reset-state} -result [list 1 1 $sampleFile 1]
+
+reset-state
+
+test break-1.2 {proc and method breakpoints coexist} -body {
+    set pid [tdb::break add -proc ::foo::bar]
+    set mid [tdb::break add -method ::Foo::* methodA -log {enter}]
+    set ids [list $pid $mid]
+    set names {}
+    foreach bp [tdb::break ls] {
+        lappend names [dict get $bp type]
+    }
+    list $ids [lsort $names]
+} -cleanup {reset-state} -result {{1 2} {method proc}}
+
+reset-state
+
+test break-1.3 {rm and clear drop entries} -body {
+    set a [tdb::break add -proc ::alpha]
+    set b [tdb::break add -proc ::beta]
+    tdb::break rm $a
+    set entries [tdb::break ls]
+    list $b [llength $entries] [dict get [lindex $entries 0] id]
+} -cleanup {reset-state} -result {2 1 2}
+
+test break-1.4 {stop clears breakpoints and reset ids} -body {
+    tdb::break add -proc ::alpha
+    tdb::stop
+    list [tdb::break ls] [tdb::break add -proc ::beta]
+} -cleanup {reset-state} -result {{} 1}
+
+cleanupTests

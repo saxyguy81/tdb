@@ -1,0 +1,16 @@
+--- a/generic/tclInt.h
++++ b/generic/tclInt.h
+@@
+-#ifdef STDC_HEADERS
+-#include <stddef.h>
+-#else
+-typedef int ptrdiff_t;
+-#endif
++#if defined(STDC_HEADERS) || defined(__APPLE__) || defined(__GNUC__)
++#   include <stddef.h>
++#else
++#   ifndef TCL_PTRDIFF_T_DEFINED
++#       define TCL_PTRDIFF_T_DEFINED
++typedef int ptrdiff_t;
++#   endif
++#endif

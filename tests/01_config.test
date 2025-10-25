@@ -1,0 +1,33 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+test config-1.1 {defaults reported} -body {
+    dict get [tdb::config] -perf.allowInline
+} -result 1
+
+test config-1.2 {set config options} -body {
+    tdb::config -perf.allowInline 0 -path.normalize 0
+    list [dict get [tdb::config] -perf.allowInline] [dict get [tdb::config] -path.normalize]
+} -cleanup {
+    tdb::config -perf.allowInline 1 -path.normalize 1
+} -result {0 0}
+
+test config-1.3 {start/stop idempotent} -body {
+    tdb::start
+    tdb::start
+    tdb::stop
+    tdb::stop
+    return ok
+} -result ok
+
+test config-1.4 {unknown option error details} -body {
+    if {[catch {tdb::config -notreal 1} err opt]} {
+        list $err [dict get $opt -errorcode]
+    }
+} -result {{unknown configuration option} {TDB CONFIG OPTION}}
+
+cleanupTests

@@ -1,0 +1,43 @@
+PACKAGE_NAME = @TEA_PACKAGE_NAME@
+PACKAGE_VERSION = @TEA_PACKAGE_VERSION@
+TDB_VERSION = @TDB_VERSION@
+
+CC = @CC@
+CFLAGS = @CFLAGS@ @SHLIB_CFLAGS@
+CPPFLAGS = @CPPFLAGS@
+LDFLAGS = @LDFLAGS@
+SHLIB_LD = @SHLIB_LD@
+SHLIB_LDFLAGS = @SHLIB_LDFLAGS@
+SHLIB_SUFFIX = @SHLIB_SUFFIX@
+PKG_LIB_FILE = @PKG_LIB_FILE@
+TCL_INCLUDE_SPEC = @TCL_INCLUDE_SPEC@
+TCL_STUB_LIB_SPEC = @TCL_STUB_LIB_SPEC@
+INSTALL = @INSTALL@
+INSTALL_DATA = @INSTALL_DATA@
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+libdir = @libdir@
+
+SRC_DIR = generic
+LIBRARY_DIR = library
+TEST_DIR = tests
+OBJECTS = tdb_engine.o
+
+all: $(PKG_LIB_FILE)
+
+$(PKG_LIB_FILE): $(OBJECTS)
+	$(SHLIB_LD) $(CFLAGS) $(CPPFLAGS) $(OBJECTS) $(SHLIB_LDFLAGS) $(LDFLAGS) $(TCL_STUB_LIB_SPEC) -o $@
+
+%.o: $(SRC_DIR)/%.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(TCL_INCLUDE_SPEC) -c $< -o $@
+
+install: all
+	$(INSTALL) -d $(DESTDIR)$(libdir)/tdb/library
+	$(INSTALL) -m 755 $(PKG_LIB_FILE) $(DESTDIR)$(libdir)/tdb/
+	$(INSTALL_DATA) pkgIndex.tcl $(DESTDIR)$(libdir)/tdb/
+	cp -R $(LIBRARY_DIR)/* $(DESTDIR)$(libdir)/tdb/library/
+
+clean:
+	rm -f $(OBJECTS) $(PKG_LIB_FILE)
+
+.PHONY: all install clean
