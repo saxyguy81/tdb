@@ -1,0 +1,25 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+proc tight {n} {
+    for {set i 0} {$i < $n} {incr i} {}
+}
+
+test fast-1.1 {fast path counters} -body {
+    tdb::start
+    # Add a breakpoint that won't match this test file/line
+    tdb::break add -proc ::nonexistent__proc
+    set _ [tight 5000]
+    set s [tdb::stats]
+    # Allow a rare frame lookup due to environment variance
+    list [expr {[dict get $s frameLookups] <= 1}] [expr {[dict get $s procFastRejects] > 0}]
+} -cleanup {
+    tdb::break clear
+    tdb::stop
+} -result {1 1}
+
+cleanupTests

@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tcl 8.6
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tcl8.6
+      - name: Build
+        run: |
+          ./configure
+          make -s
+      - name: Run tests (8.6)
+        env:
+          TCLLIBPATH: .
+        run: |
+          tclsh8.6 tests/all.tcl
+
+  build-and-test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tcl 8.6 (Homebrew)
+        run: |
+          brew update || true
+          brew install tcl-tk@8 || true
+      - name: Build
+        run: |
+          ./configure --with-tcl=$(brew --prefix tcl-tk@8)/lib
+          make -s
+      - name: Run tests (8.6)
+        env:
+          TCLLIBPATH: .
+        run: |
+          $(brew --prefix tcl-tk@8)/bin/tclsh8.6 tests/all.tcl
+
+  perf-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tcl 8.6
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tcl8.6
+      - name: Build
+        run: |
+          ./configure
+          make -s
+      - name: Run perf constraints (opt-in)
+        env:
+          TCLLIBPATH: .
+        run: |
+          tclsh8.6 tests/all.tcl -constraints perf
+
+  build-and-test-ubuntu-85:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Tcl 8.5 from source
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl tar
+          mkdir -p $HOME/.build-tcl85 && cd $HOME/.build-tcl85
+          curl -L -o tcl.tar.gz https://prdownloads.sourceforge.net/tcl/tcl8.5.19-src.tar.gz
+          tar -xzf tcl.tar.gz
+          cd tcl8.5.19/unix
+          ./configure --prefix=$HOME/.local/tcl8.5 || true
+          make -j2 || true
+          make install || true
+      - name: Build extension
+        run: |
+          ./configure --with-tcl=$HOME/.local/tcl8.5/lib || true
+          make -s || true
+      - name: Run tests (8.5)
+        env:
+          TCLLIBPATH: .
+        run: |
+          $HOME/.local/tcl8.5/bin/tclsh8.5 tests/all.tcl

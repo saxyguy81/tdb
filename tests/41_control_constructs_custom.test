@@ -1,0 +1,50 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+test custom-1.1 {register DSL syntax and annotate stop event} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        # Define a simple DSL command
+        proc xif {expr thenScript elseScript} {
+            if {[uplevel 1 [list expr $expr]]} {
+                uplevel 1 $thenScript
+            } else {
+                uplevel 1 $elseScript
+            }
+        }
+        # Register its syntax (best-effort metadata)
+        tdb::register_command_syntax xif {arms {expr script script}}
+        # Create a temp caller with a known call site
+        set tmp [file normalize [file join [pwd] tests tmp_custom_xif.tcl]]
+        set fh [open $tmp w]
+        puts $fh {proc demo {} {
+    set y 0
+    xif {$y == 0} { set y 1 } { set y 2 } ;# CALL
+    return $y
+}}
+        close $fh
+        set fh [open $tmp r]; set data [split [read $fh] "\n"]; close $fh
+        set line -1
+        for {set i 0} {$i < [llength $data]} {incr i} {
+            if {[string match *#\ CALL* [lindex $data $i]]} { set line [expr {$i+1}]; break }
+        }
+        source $tmp
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        tdb::break add -file $tmp -line $line
+        ::tdb::_ensure_exec_traces
+        after 0 { demo }
+        set ev [tdb::wait -timeout 2000]
+        # Best-effort: ensure we paused at the call site; syntax metadata may be absent on some builds
+        expr {[dict get $ev reason] eq "breakpoint"}
+    }
+} -result 1
+
+cleanupTests

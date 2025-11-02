@@ -1,0 +1,50 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+test step-1.1 {step in/over/out across procs} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        # Create a temp script with procs so we can compute lines
+        set tmp [file normalize [file join [pwd] tests tmp_step.tcl]]
+        set fh [open $tmp w]
+        puts $fh {proc b {} {
+    set y 2 ;# BLINE
+    return $y
+}
+proc a {} {
+    set x 1 ;# ALINE
+    b
+    return [incr x]
+}}
+        close $fh
+        set fh [open $tmp r]; set data [split [read $fh] "\n"]; close $fh
+        set aline -1; set bline -1
+        for {set i 0} {$i < [llength $data]} {incr i} {
+            if {[string match *#\ ALINE* [lindex $data $i]]} { set aline [expr {$i+1}] }
+            if {[string match *#\ BLINE* [lindex $data $i]]} { set bline [expr {$i+1}] }
+        }
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        source $tmp
+        ::tdb::_ensure_exec_traces
+        tdb::break add -file $tmp -line $aline
+        after 0 { a }
+        set ev [tdb::wait -timeout 2000]
+        # Step over the assignment line
+        tdb::step over -wait
+        # Step in to b
+        tdb::step in -wait
+        # Now run until scope exit
+        tdb::rununtil scope-exit -wait
+        list [dict get $ev reason] [dict exists $ev file]
+    }
+} -result {breakpoint 1}
+
+cleanupTests

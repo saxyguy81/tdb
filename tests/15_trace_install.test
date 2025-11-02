@@ -1,0 +1,29 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+test trace-1.1 {no breakpoints -> tracing 0} -body {
+    tdb::stop
+    tdb::start
+    dict get [tdb::stats] tracing
+} -result 0
+
+test trace-1.2 {add proc bp -> tracing 1} -setup {
+    proc dummy {} {return 0}
+} -body {
+    tdb::break add -proc ::dummy
+    dict get [tdb::stats] tracing
+} -cleanup {
+    tdb::break clear
+} -result 1
+
+test trace-1.3 {clear bps -> tracing 0} -body {
+    tdb::break clear
+    dict get [tdb::stats] tracing
+} -result 0
+
+cleanupTests
+

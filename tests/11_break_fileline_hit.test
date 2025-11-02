@@ -1,0 +1,66 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+set thisFile [file normalize [info script]]
+test fileline-1.1 {file:line breakpoint hits inside proc} -constraints {!win32Only} -setup {
+    # Create a temporary script with a proc that we will call
+    set tmp [file normalize [file join [pwd] tests tmp_fileline.tcl]]
+    set lines [list \
+        {# temp script} \
+        {proc _fl_proc {} { } }]
+    set fh [open $tmp w]; foreach l $lines { puts $fh $l }; close $fh
+    # Append body lines with a marker
+    set fh [open $tmp a]
+    puts $fh {# body}
+    puts $fh {proc _fl_proc {} {
+    set ::_fl_var 1 ;# HIT_HERE
+    incr ::_fl_var
+}}
+    close $fh
+    # Determine target line number by scanning file
+    set fl_target -1
+    set fh [open $tmp r]; set data [split [read $fh] "\n"]; close $fh
+    for {set i 0} {$i < [llength $data]} {incr i} {
+        if {[string match *#\ HIT_HERE* [lindex $data $i]]} {
+            set fl_target [expr {$i+1}]
+            break
+        }
+    }
+    set ::tdb::_dbgCount 0
+} -body {
+    # Run in a child interpreter to avoid tcltest history interference
+    set child [interp create]
+    # Make package visible in child
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child [list set tmp $tmp]
+    interp eval $child [list set fl_target $fl_target]
+    interp eval $child {
+        package require tdb
+        catch { rename history {} }
+        puts "CHILD: start"
+        tdb::start
+        tdb::break add -file $tmp -line $fl_target
+        source $tmp
+        ::tdb::_ensure_exec_traces
+        puts "CHILD: traceinfo=[trace info execution ::_fl_proc]"
+        # Run asynchronously and coordinate via wait/continue
+        after 0 { _fl_proc }
+        puts "CHILD: waiting"
+        after 1
+        set ev [tdb::wait -timeout 2000]
+        puts "CHILD: got ev=[dict get $ev reason]"
+        tdb::continue
+        set linediff [expr {abs([dict get $ev line] - $fl_target)}]
+        list [dict get $ev reason] [expr {[dict get $ev file] eq $tmp}] [expr {$linediff <= 1}]
+    }
+} -cleanup {
+    catch { interp delete $child }
+    file delete -force $tmp
+} -result {breakpoint 1 1}
+
+cleanupTests

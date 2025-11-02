@@ -1,0 +1,22 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+proc foo {x} { return [expr {$x+1}] }
+
+test proc-1.1 {proc breakpoint hits at entry} -body {
+    tdb::start
+    tdb::break add -proc ::foo
+    after 0 { foo 41 }
+    set ev [tdb::wait -timeout 2000]
+    tdb::continue
+    list [dict get $ev reason] [dict get $ev proc]
+} -cleanup {
+    tdb::break clear
+    tdb::stop
+} -result {breakpoint ::foo}
+
+cleanupTests

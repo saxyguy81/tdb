@@ -1,0 +1,70 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+set haveOO [expr {![catch {package require TclOO}]}]
+testConstraint HaveOO $haveOO
+
+test method-cond-1.1 {method bp condition pauses only when true} -constraints {HaveOO} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        oo::class create Dog { method bark {x} { return $x } }
+        set d [Dog new]
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        # Condition uses $cmd (the full command list): check x is even
+        tdb::break add -method ::* bark -condition {expr {[lindex $cmd 2] % 2 == 0}}
+        after 0 { $d bark 1 }
+        # No pause expected
+        set rc [catch { tdb::wait -timeout 400 } err]
+        set ok1 [expr {$rc == 1}]
+        after 0 { $d bark 2 }
+        set ev [tdb::wait -timeout 2000]
+        list $ok1 [dict get $ev reason]
+    }
+} -result {1 breakpoint}
+
+test method-hit-1.2 {method bp hitCount ==3 pauses once} -constraints {HaveOO} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        oo::class create Dog { method bark {} { return ok } }
+        set d [Dog new]
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        tdb::break add -method ::* bark -hitCount ==3
+        after 0 { $d bark }
+        after 0 { $d bark }
+        after 0 { $d bark }
+        set ev [tdb::wait -timeout 2000]
+        dict get $ev reason
+    }
+} -result breakpoint
+
+test method-log-1.3 {method logpoint prints but does not pause} -constraints {HaveOO} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        oo::class create Dog { method bark {x} { return $x } }
+        set d [Dog new]
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        tdb::break add -method ::* bark -log {x=$x}
+        # Run and ensure no pause occurs
+        after 0 { $d bark 42 }
+        set rc [catch { tdb::wait -timeout 400 } err]
+        expr {$rc == 1 && [lindex $::errorCode 1] eq "TIMEOUT"}
+    }
+} -result 1
+
+cleanupTests

@@ -1,0 +1,28 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+# Determine if TclOO is available; skip test gracefully if not
+set haveOO [expr {![catch {package require TclOO}]}]
+
+if {$haveOO} {
+test method-1.1 {object method breakpoint} -constraints {unixOnly} -body {
+    oo::class create Dog {
+        method bark {} { return barked }
+    }
+    set d [Dog new]
+    tdb::start
+    tdb::break add -method ::* bark
+    after 0 { $d bark }
+    set ev [tdb::wait -timeout 2000]
+    list [dict get $ev reason] [dict exists $ev cmd]
+} -cleanup {
+    tdb::break clear
+    tdb::stop
+} -result {breakpoint 1}
+}
+
+cleanupTests

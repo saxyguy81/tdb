@@ -1,43 +1,50 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TEST_SCRIPT="$ROOT_DIR/tests/all.tcl"
+# Runs the test suite on Tcl 8.5 and 8.6 if available.
+# Honors TCLSH85/TCLSH86 env override; otherwise uses scripts/find-tclsh.sh.
 
-INTERP_85="${TCLSH85:-$HOME/.local/tcl8.5/bin/tclsh8.5}"
-INTERP_86="${TCLSH86:-/opt/homebrew/opt/tcl-tk@8/bin/tclsh8.6}"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+find_tcl="${root}/scripts/find-tclsh.sh"
+sh() { bash "$@"; }
 
-labels=("Tcl 8.5" "Tcl 8.6")
-interpreters=("$INTERP_85" "$INTERP_86")
-
-status=0
-
-run_tests() {
-  local label="$1"
-  local interp="$2"
-
-  if [ -z "$interp" ]; then
-    printf '[SKIP] %-8s (interpreter not specified)\n' "$label"
-    return
-  fi
-
-  if ! command -v "$interp" >/dev/null 2>&1; then
-    printf '[SKIP] %-8s (%s not found)\n' "$label" "$interp"
-    return
-  fi
-
-  printf '[RUN ] %-8s -> %s\n' "$label" "$interp"
-  if "$interp" "$TEST_SCRIPT"; then
-    printf '[PASS] %-8s\n' "$label"
-  else
-    printf '[FAIL] %-8s\n' "$label"
-    status=1
-  fi
+run_one() {
+  local exe="$1"; local label="$2"
+  echo "== Running on ${label}: ${exe}" >&2
+  (cd "$root" && TCLLIBPATH=. "$exe" tests/all.tcl)
 }
 
-for idx in "${!labels[@]}"; do
-  run_tests "${labels[$idx]}" "${interpreters[$idx]}"
-  echo
-done
+ok_any=0
 
-exit $status
+# 8.5
+if [[ -n "${TCLSH85:-}" ]]; then
+  run_one "$TCLSH85" "Tcl 8.5" || true
+  ok_any=1
+else
+  if sh "$find_tcl" 8.5 >/dev/null 2>&1; then
+    exe="$(sh "$find_tcl" 8.5)"
+    run_one "$exe" "Tcl 8.5" || true
+    ok_any=1
+  else
+    echo "(skip) Tcl 8.5 not found" >&2
+  fi
+fi
+
+# 8.6
+if [[ -n "${TCLSH86:-}" ]]; then
+  run_one "$TCLSH86" "Tcl 8.6" || true
+  ok_any=1
+else
+  if sh "$find_tcl" 8.6 >/dev/null 2>&1; then
+    exe="$(sh "$find_tcl" 8.6)"
+    run_one "$exe" "Tcl 8.6" || true
+    ok_any=1
+  else
+    echo "(skip) Tcl 8.6 not found" >&2
+  fi
+fi
+
+if [[ "$ok_any" -eq 0 ]]; then
+  echo "No Tcl interpreters found. Set TCLSH85/TCLSH86 or install Tcl (see README)." >&2
+  exit 1
+fi

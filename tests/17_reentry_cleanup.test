@@ -1,0 +1,31 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+test reentry-1.1 {no re-entrant pause; cleanup on stop} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        proc reentry_proc {} {
+            set ::duringPause 0
+            return ok
+        }
+        tdb::start
+        tdb::break add -proc ::reentry_proc
+        after 10 { set ::duringPause 1 }
+        after 0 { reentry_proc }
+        set ev [tdb::wait -timeout 2000]
+        # Should have paused exactly once
+        set first [dict get $ev event]
+        tdb::continue
+        tdb::stop
+        list $first [dict get [tdb::stats] tracing]
+    }
+} -result {stopped 0}
+
+cleanupTests

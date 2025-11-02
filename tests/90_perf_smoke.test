@@ -1,0 +1,35 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+testConstraint perf 0
+
+test perf-1.1 {object trace + non-matching bp overhead is modest} -constraints {perf} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        proc tight {n} {
+            set s 0
+            for {set i 0} {$i < $n} {incr i} { incr s $i }
+            return $s
+        }
+        set n 20000
+        # Baseline
+        set t0 [lindex [time { tight $n } 1] 0]
+        # With tracing + non-matching bp
+        tdb::start
+        # Add a bp on an impossible file:line to keep trace installed but cold
+        tdb::break add -file /__no_such_file__ -line 1
+        set t1 [lindex [time { tight $n } 1] 0]
+        # Relative overhead threshold ~25%
+        expr {$t1 <= 1.25 * $t0}
+    }
+} -result 1
+
+cleanupTests
+

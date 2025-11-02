@@ -1,0 +1,39 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+
+cleanupTests
+
+test frames-1.1 {frames and locals/eval} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        # Create a temp script to compute break line
+        set tmp [file normalize [file join [pwd] tests tmp_frames.tcl]]
+        set fh [open $tmp w]
+        puts $fh {proc demo {a b} {
+    tdb::_pauseNow -reason test
+    set c [expr {$a+$b}]
+    return [expr {$c*2}]
+}}
+        close $fh
+        set fh [open $tmp r]; set data [split [read $fh] "\n"]; close $fh
+        source $tmp
+        after 0 { demo 3 4 }
+        set ev [tdb::wait -timeout 2000]
+        # Eval correctness in paused frame
+        set val [tdb::eval -1 {expr {$a+$b}}]
+        set out [list [dict get $ev event] $val]
+        # Resume the paused script so the child can complete cleanly
+        tdb::continue
+        set out
+    }
+} -result {stopped 7}
+
+cleanupTests

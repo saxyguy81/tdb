@@ -1,0 +1,113 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+test builtin-1.1 {if/elseif/else stepping} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        set tmp [file normalize [file join [pwd] tests tmp_builtin_if.tcl]]
+        set fh [open $tmp w]
+        puts $fh {proc demo {x} {
+    if {$x < 0} {
+        set s neg ;# LINE
+    } elseif {$x == 0} {
+        set s zero
+    } else {
+        set s pos
+    }
+    return $s
+}}
+        close $fh
+        set fh [open $tmp r]; set data [split [read $fh] "\n"]; close $fh
+        set line -1
+        for {set i 0} {$i < [llength $data]} {incr i} {
+            if {[string match *#\ LINE* [lindex $data $i]]} { set line [expr {$i+1}]; break }
+        }
+        source $tmp
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        tdb::break add -file $tmp -line $line
+        ::tdb::_ensure_exec_traces
+        after 0 { demo 1 }
+        set ev1 [tdb::wait -timeout 2000]
+        # Step over the assignment
+        set ev2 [tdb::step over -wait]
+        list [dict get $ev1 reason] [dict get $ev2 reason]
+    }
+} -result {breakpoint step}
+
+test builtin-1.2 {foreach stepping} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        set tmp [file normalize [file join [pwd] tests tmp_builtin_foreach.tcl]]
+        set fh [open $tmp w]
+        puts $fh {proc demo {} {
+    set acc 0 ;# LINE
+    foreach n {1 2 3} { incr acc $n }
+    return $acc
+}}
+        close $fh
+        set fh [open $tmp r]; set data [split [read $fh] "\n"]; close $fh
+        set line -1
+        for {set i 0} {$i < [llength $data]} {incr i} {
+            if {[string match *#\ LINE* [lindex $data $i]]} { set line [expr {$i+1}]; break }
+        }
+        source $tmp
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        tdb::break add -file $tmp -line $line
+        ::tdb::_ensure_exec_traces
+        after 0 { demo }
+        set ev1 [tdb::wait -timeout 2000]
+        set ev2 [tdb::step over -wait]
+        list [dict get $ev1 reason] [dict get $ev2 reason]
+    }
+} -result {breakpoint step}
+
+test builtin-1.3 {try/catch/finally (8.6) stepping} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        if {[catch {info commands try}]} { return SKIP }
+        set tmp [file normalize [file join [pwd] tests tmp_builtin_try.tcl]]
+        set fh [open $tmp w]
+        puts $fh {proc demo {} {
+    set x 0 ;# LINE
+    try {
+        incr x
+    } finally {
+        incr x
+    }
+    return $x
+}}
+        close $fh
+        set fh [open $tmp r]; set data [split [read $fh] "\n"]; close $fh
+        set line -1
+        for {set i 0} {$i < [llength $data]} {incr i} {
+            if {[string match *#\ LINE* [lindex $data $i]]} { set line [expr {$i+1}]; break }
+        }
+        source $tmp
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        tdb::break add -file $tmp -line $line
+        ::tdb::_ensure_exec_traces
+        after 0 { demo }
+        set ev1 [tdb::wait -timeout 2000]
+        set ev2 [tdb::step over -wait]
+        expr {[dict get $ev1 reason] eq "breakpoint" && [dict get $ev2 reason] eq "step"}
+    }
+} -result 1
+
+cleanupTests
+

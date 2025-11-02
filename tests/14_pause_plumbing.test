@@ -1,0 +1,33 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+test pause-1.1 {pause plumbing with _pauseNow and continue} -body {
+    # Isolate in child interpreter
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        tdb::start
+        tdb::break clear
+        catch { unset ::tdb::_stopped }
+        catch { unset ::tdb::_last_stop }
+        after 0 { tdb::_pauseNow -reason test }
+        set ev [tdb::wait -timeout 2000]
+        # Resume the pause inside the child so the script completes
+        tdb::continue
+        list [dict get $ev event] [dict get $ev reason]
+    }
+} -result {stopped test}
+
+test pause-1.2 {continue releases pause} -body {
+    # Resume and ensure we don't hang
+    tdb::continue
+    return ok
+} -result ok
+
+cleanupTests

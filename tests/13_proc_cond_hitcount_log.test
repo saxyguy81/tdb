@@ -1,0 +1,66 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+testConstraint ProcCond 1
+
+test proc-cond-1.1 {proc bp condition pauses only when true} -constraints {ProcCond} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        proc foo {x} { return [expr {$x+1}] }
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        # Pause only when x is even
+        tdb::break add -proc ::foo -condition {expr {$x % 2 == 0}}
+        after 0 { foo 1 }
+        # No pause expected
+        set rc [catch { tdb::wait -timeout 400 } err]
+        set ok1 [expr {$rc == 1}]
+        after 0 { foo 2 }
+        set ev [tdb::wait -timeout 2000]
+        list $ok1 [dict get $ev reason] [dict get $ev proc]
+    }
+} -result {1 breakpoint ::foo}
+
+test proc-hit-1.2 {proc bp hitCount ==3 pauses once} -constraints {ProcCond} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        proc foo {} {return ok}
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        tdb::break add -proc ::foo -hitCount ==3
+        after 0 { foo }
+        after 0 { foo }
+        after 0 { foo }
+        set ev [tdb::wait -timeout 2000]
+        list [dict get $ev reason] [dict get $ev proc]
+    }
+} -result {breakpoint ::foo}
+
+test proc-log-1.3 {proc logpoint prints but does not pause} -constraints {ProcCond} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        proc foo {x} {return $x}
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        tdb::break add -proc ::foo -log {x=$x}
+        # Run and ensure no pause occurs
+        after 0 { foo 42 }
+        set rc [catch { tdb::wait -timeout 400 } err]
+        expr {$rc == 1 && [lindex $::errorCode 1] eq "TIMEOUT"}
+    }
+} -result 1
+
+cleanupTests

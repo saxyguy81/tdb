@@ -1,0 +1,72 @@
+package require tcltest 2
+namespace import ::tcltest::*
+
+package require tdb
+
+cleanupTests
+
+test runto-1.1 {run-to-cursor by file:line pauses at target} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        # Build a temporary script and compute a target line
+        set tmp [file normalize [file join [pwd] tests tmp_runto.tcl]]
+        set fh [open $tmp w]
+        puts $fh {proc demo {} {
+    set a 1
+    set b 2 ;# TARGET
+    return [expr {$a+$b}]
+}}
+        close $fh
+        set fh [open $tmp r]; set data [split [read $fh] "\n"]; close $fh
+        set line -1
+        for {set i 0} {$i < [llength $data]} {incr i} {
+            if {[string match *#\ TARGET* [lindex $data $i]]} { set line [expr {$i+1}]; break }
+        }
+        source $tmp
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        after 0 { demo }
+        # Run to cursor (target line)
+        set ev [tdb::rununtil [format {file:%s:%d} $tmp $line] -wait]
+        set okReason [expr {[dict get $ev reason] in {breakpoint step}}]
+        set okLine [expr {abs([dict get $ev line] - $line) <= 1}]
+        list $okReason [dict exists $ev file] $okLine
+    }
+} -result {1 1 1}
+
+test scope-1.2 {rununtil scope-exit pauses at leave of current proc} -body {
+    set child [interp create]
+    set pkgDir [file normalize [file dirname [file dirname [info script]]]]
+    interp eval $child [list set ::auto_path [linsert $::auto_path 0 $pkgDir]]
+    interp eval $child {
+        package require tdb
+        set tmp [file normalize [file join [pwd] tests tmp_scope.tcl]]
+        set fh [open $tmp w]
+        puts $fh {proc demo {} {
+    set x 1 ;# LINE
+    return [incr x]
+}}
+        close $fh
+        set fh [open $tmp r]; set data [split [read $fh] "\n"]; close $fh
+        set line -1
+        for {set i 0} {$i < [llength $data]} {incr i} {
+            if {[string match *#\ LINE* [lindex $data $i]]} { set line [expr {$i+1}]; break }
+        }
+        source $tmp
+        tdb::start
+        catch { unset ::tdb::_stopped }
+        # Set a file:line bp at the first line and pause there
+        tdb::break add -file $tmp -line $line
+        ::tdb::_ensure_exec_traces
+        after 0 { demo }
+        set ev1 [tdb::wait -timeout 2000]
+        # Now run until scope-exit
+        set ev2 [tdb::rununtil scope-exit -wait]
+        list [dict get $ev1 reason] [dict get $ev2 reason]
+    }
+} -result {breakpoint step}
+
+cleanupTests
